@@ -6,6 +6,7 @@ from IPython import get_ipython
 # %%
 import numpy as np
 import matplotlib.pyplot as plt
+import xgboost as xgb
 import librosa.display
 import pylab
 from sklearn.model_selection import train_test_split
@@ -15,7 +16,7 @@ import glob
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, BatchNormalization
 from tensorflow.keras.layers import Conv2D, MaxPooling2D
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import optimizers
@@ -26,9 +27,22 @@ import random
 rcParams['figure.figsize'] = 20, 5
 # encabezado
 # tercer encabezado
-# new branch
+# new branchDSDSDSDJNJNJNJ  vggvgvFDFDFDdsdsdsdsd
 # segundo encabezado
 get_ipython().run_line_magic('matplotlib', 'inline')
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+  # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
+  try:
+    tf.config.experimental.set_virtual_device_configuration(
+        gpus[0],
+        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1024)])
+    logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+  except RuntimeError as e:
+    # Virtual devices must be set before GPUs have been initialized
+    print(e)
+
 
 
 # %%
@@ -185,17 +199,46 @@ normalized_stft = scaler.transform(X_stft)
 print(np.amax(X_stft))
 print(np.amax(normalized_stft))
 
+#%%
+print(set(labels))
+
 
 # %%
-from sklearn import tree
-X_train, X_test, y_train, y_test = train_test_split(X_stft, Y_label, test_size=0.20, random_state=1150)
-clf = tree.DecisionTreeClassifier()
+#Modelo con SVM
+from sklearn import tree, svm
+param = {'max_depth':2, 'eta':1, 'silent':1, 'objective':'binary:logistic' }
+num_round = 2
+#from skmultilearn.model_selection import iterative_train_test_split
+X_train, X_test, y_train, y_test = train_test_split(normalized_stft,Y_label, test_size=0.50,random_state =2,stratify= Y_label)
+print("Split ready")
+clf = svm.SVC(verbose= True,random_state=2)
 clf.fit(X_train, y_train)
-
-
-# %%
 y_pred = clf.predict(X_test)
-print(accuracy_score(y_test, y_pred))
+print("SVM: acc:"+ str(accuracy_score(y_test, y_pred)))
+
+#%%
+# Modelo con PCA y SVM
+from sklearn.decomposition import PCA
+print("Cantidad de caracteristicas", len(X_stft[0]))
+pca = PCA(n_components=200)
+pca.fit(normalized_stft) ## justa para todo el espectro de datos
+X_train_PCA = pca.transform(X_train)
+X_test_PCA = pca.transform(X_test)
+clf_PCA = svm.SVC(verbose= True,random_state=2)
+clf_PCA.fit(X_train_PCA, y_train)
+y_pred = clf_PCA.predict(X_test_PCA)
+print("SVM+PCA: acc:"+ str(accuracy_score(y_test, y_pred)))
+
+#%%
+#Prueba para observar la conservación de la estratificación
+count1 = [0 for _ in range(len(set(y_test)))]
+count2 = [0 for _ in range(len(set(y_train)))]
+for i in y_test:
+    count1[i] = count1[i]+1
+for ii in y_train:
+    count2[ii] = count2[ii]+1
+print([i/sum(count1)*100 for i in count1])
+print([i/sum(count2)*100 for i in count2])
 
 
 # %%
@@ -218,6 +261,7 @@ model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Conv2D(32, (3, 3)))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(BatchNormalization())
 
 #model.add(Dropout(0.2))
 
@@ -226,6 +270,7 @@ model.add(MaxPooling2D(pool_size=(2, 2)))
 model.add(Conv2D(64, (3, 3),padding='same'))
 model.add(Activation('relu'))
 model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
 #'''
 
 
@@ -233,6 +278,7 @@ model.add(Flatten())  # this converts our 3D feature maps to 1D feature vectors
 
 #model.add(Dense(1000))#input_shape=features.shape[1:]
 model.add(Dense(64))#input_shape=features.shape[1:]
+model.add(Dropout(0.25))
 
 model.add(Dense(10))
 model.add(Activation('softmax'))
@@ -241,26 +287,24 @@ sgd = optimizers.SGD(lr=0.0000001, decay=1e-6, momentum=0.9, nesterov=True)
 model.compile(loss='categorical_crossentropy',
               optimizer='adam',
               metrics=['accuracy'])
-
-
 # %%
-history = model.fit(features_convolution, y,batch_size=8, epochs=40,validation_split=0.2)
-
+history = model.fit(features_convolution, y,batch_size=8, epochs=10,validation_split=0.2, )
 
 # %%
 import matplotlib.pyplot as plt
-acc = history.history['acc']
-val_acc = history.history['val_acc']
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
 loss = history.history['loss']
 val_loss = history.history['val_loss']
 
 epochs = range(len(acc))
 
-plt.plot(epochs, acc, 'r', label='Training accuracy')
-plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
+plt.plot(epochs, loss, 'r', label='Training loss')
+plt.plot(epochs, val_loss, 'b', label='Validation loss')
 plt.title('Training and validation accuracy')
-plt.legend(loc=0)
+plt.legend(loc=0) 
 plt.figure()
-
-
 plt.show()
+
+
+# %%
