@@ -16,7 +16,7 @@ This project classifies sound signals from different environmental classes in th
 ```html
 #here my directory name is "dataset"
 
-data, samplerate = librosa.load("dataset/dog/1-30344-A.wav", sr=44000) 
+data, samplerate = librosa.load("dataset/CLASSNAME/SOUND_NAME.wav", sr=44000) 
 
 for filepath in glob.iglob('dataset/*'):
 
@@ -29,5 +29,4 @@ for j in glob.iglob('dataset/'+i+'/*'):
 - matplotlib
 - librosa
 - pylab
-- glob
 - tensorflow
