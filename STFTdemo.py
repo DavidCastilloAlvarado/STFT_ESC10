@@ -31,7 +31,7 @@ if gpus:
   try:
     tf.config.experimental.set_virtual_device_configuration(
         gpus[0],
-        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=1000)])
+        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=512)])
     logical_gpus = tf.config.experimental.list_logical_devices('GPU')
     print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
   except RuntimeError as e:
@@ -147,12 +147,13 @@ print(np.amax(normalized_stft))
 #from skmultilearn.model_selection import iterative_train_test_split
 X_train, X_test, y_train, y_test = train_test_split(normalized_stft,Y_label, test_size=0.20,random_state =2,stratify= Y_label)
 print("Split ready")
+from sklearn.model_selection import GridSearchCV 
+from sklearn.model_selection import RandomizedSearchCV 
+from sklearn import svm
+from sklearn.decomposition import PCA
 
 # %%
 #Modelo con SVM
-from sklearn import tree, svm
-param = {'max_depth':2, 'eta':1, 'silent':1, 'objective':'binary:logistic' }
-num_round = 2
 clf = svm.SVC(verbose= True,random_state=2)
 clf.fit(X_train, y_train)
 y_pred = clf.predict(X_test)
@@ -160,7 +161,6 @@ print("SVM: acc:"+ str(accuracy_score(y_test, y_pred)))
 
 #%%
 # Modelo con PCA y SVM
-from sklearn.decomposition import PCA
 print("Cantidad de caracteristicas", len(X_stft[0]))
 pca = PCA(n_components=300)
 pca.fit(normalized_stft) ## justa para todo el espectro de datos
@@ -170,6 +170,24 @@ clf_PCA = svm.SVC(verbose= True,random_state=5, )
 clf_PCA.fit(X_train_PCA, y_train)
 y_pred = clf_PCA.predict(X_test_PCA)
 print("SVM+PCA: acc:"+ str(accuracy_score(y_test, y_pred)))
+
+#%% 
+# Modelo PCA & SVM & GRIDsearch
+#simple performance reporting function
+def clf_performance(classifier, model_name):
+    print(model_name)
+    print('Best Score: ' + str(classifier.best_score_))
+    print('Best Parameters: ' + str(classifier.best_params_))
+clf = svm.SVC(verbose= True,random_state=2)
+
+param_grid = tuned_parameters = [{'kernel': ['rbf'], 'gamma': [.1,.5,1,2,5,10],
+                                  'C': [.1, 1, 10, 100, 1000]},
+                                 {'kernel': ['linear'], 'C': [.1, 1, 10, 100, 1000]},
+                                 {'kernel': ['poly'], 'degree' : [2,3,4,5], 'C': [.1, 1, 10, 100, 1000]}]
+clf_svc = GridSearchCV(clf, param_grid = param_grid, cv = 5, verbose = True, n_jobs = 4)
+best_clf_svc = clf_svc.fit(X_train, y_train)
+clf_performance(best_clf_svc,'SVC')
+
 
 #%%
 # Modelo clasificador con XGB & PCA
@@ -232,16 +250,19 @@ model.compile(loss='categorical_crossentropy',
               optimizer=optimizers.SGD(lr=1e-4),
               metrics=['accuracy'])
 model.summary()
+n_epochs = 0
 #tf.keras.utils.plot_model(model, to_file='NN_model.jpg', show_shapes=True)
 # %% Entrenando modelo Deep learning
 logdir="logs2" 
+epoch_add = 20
 tboard_callback = TensorBoard(log_dir=logdir)
 history = model.fit(X_train_NN, y_train_NN,
-                    steps_per_epoch = 8,   #cantidad de veces que se calculará el gradiente |DATOStotale = steps_per_epoch * batch_size
-                    #batch_size=8,          #cantidad de muestras para calcular el gradiente
-                    epochs=10,
+                    #steps_per_epoch = 8,   #cantidad de veces que se calculará el gradiente |DATOStotale = steps_per_epoch * batch_size
+                    batch_size=8,          #cantidad de muestras para calcular el gradiente
+                    epochs=n_epochs+epoch_add,
+                    initial_epoch = n_epochs,
                     callbacks=[tboard_callback],
-                    validation_data = [X_test_NN,y_test_NN])
+                    validation_data = (X_test_NN,y_test_NN))
 # %%
 import matplotlib.pyplot as plt
 acc = history.history['accuracy']
@@ -255,3 +276,5 @@ plt.title('Training and validation accuracy')
 plt.legend(loc=0) 
 plt.figure()
 plt.show()
+
+# %%
