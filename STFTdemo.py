@@ -252,7 +252,8 @@ model.compile(loss='categorical_crossentropy',
 model.summary()
 n_epochs = 0
 #tf.keras.utils.plot_model(model, to_file='NN_model.jpg', show_shapes=True)
-# %% Entrenando modelo Deep learning
+# %% 
+# Entrenando modelo Deep learning
 logdir="logs2" 
 epoch_add = 20
 tboard_callback = TensorBoard(log_dir=logdir)
