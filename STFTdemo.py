@@ -54,6 +54,7 @@ data = []
 noisy_removed=[]
 noise=[]
 samplerate = 44000
+max_leng=0 # mínima cantidad de muestras por sonido
 for filepath in glob.iglob('dataset/*'):
     #print(filepath[9:])
     #print(filepath)
@@ -69,16 +70,18 @@ for i in classes:
         #print(s)
         #print(j)
         audio_data.append(y)
+        max_leng = len(y) if len(y)>max_leng else max_leng
         #noise.append(y)
         labels.append(label_number)
-        
+
     label_number = label_number + 1
-#print(len(labels))
+    print("Cantidad máxima de muestras / Sonido / clase: ", max_leng)
+print("Cantidad máxima de muestras / Sonido: ", max_leng)
 print(label_number)
 
 # %%
 # ANALIZANDO UNA MUESTRA 
-example = 305
+example = 306
 samples = audio_data[example]
 sound_duration = (len(samples)/samplerate)
 step = sound_duration/len(samples)
@@ -86,14 +89,14 @@ print("Duración: ", sound_duration,"s")
 print("SampleTime: {:6f}s ".format(step))
 
 # Visualizando Sonido en el Tiempo vs Amplitud
-save_path= classes[labels[example]]+'.jpg'
+save_path= 'tiempoVSamp.jpg'
 print("Cantidad de muestras: ",len(samples))
 plt.plot([step*i for i in range(len(samples))],samples)
 plt.xlabel('Time s')
 plt.ylabel('Amplitud []')
-plt.show()
 plt.title('signal in real time')
 pylab.savefig(save_path, bbox_inches=None, pad_inches=0)
+plt.show()
 #pylab.close()
 
 # Analizando Sonido ZTiempo vs Coef STFT
@@ -102,6 +105,7 @@ rcParams['figure.figsize'] = 20, 5
 n_fft = 1024 # n_fft/2+1 como la cantidad de bandas a descomponer en el espectro de frecuencia
 win_length=1024 # Ventaneo de la STFT
 hop_length=int(win_length/2) # Desplazamiento de la ventana de transformación
+data_sound = audio_data[example] if len(audio_data[example]) == max_leng else np.pad(audio_data[example], (0,max_leng-len(audio_data[example])), constant_values = (0,0))
 freq = librosa.amplitude_to_db(np.abs(librosa.stft(audio_data[example],n_fft=n_fft, win_length=win_length ,hop_length=hop_length)), ref=np.max) #Se obtiene la potencia de la transformada 
 print("Dimención de la STFT: ", freq.shape)
 print("Clase: ",classes[labels[example]])
@@ -120,18 +124,22 @@ pylab.savefig(save_path2, bbox_inches=None, pad_inches=0)
 # Aplicando STFT a todas las muestras de sonido
 X_stft = []
 Y_label=[]
-cant_samples = 220590
+cant_samples = max_leng
 for i, i_sound in tqdm(enumerate(audio_data)):
-    freq = librosa.amplitude_to_db(np.abs(librosa.stft(i_sound, n_fft=n_fft, win_length=win_length ,hop_length=hop_length)), ref=np.max)
+    i_sound = i_sound if len(i_sound) == cant_samples else np.pad(i_sound, (0,cant_samples-len(i_sound)), constant_values = (0,0))
+    coef_stft = librosa.amplitude_to_db(np.abs(librosa.stft(i_sound, n_fft=n_fft, win_length=win_length ,hop_length=hop_length)), ref=np.max)
+    stft_shape = coef_stft.shape
     #freq = np.abs(librosa.stft(audio_data[i], n_fft=512, hop_length=256, win_length=512))
-    freq=freq.reshape(-1,1)
-    if freq.shape[0]==cant_samples:
-        X_stft.append(freq)
-        Y_label.append(labels[i])
+    freq=coef_stft.reshape(-1,1)
+    X_stft.append(freq)
+    Y_label.append(labels[i])
+    # if freq.shape[0]>=cant_samples:
+    #     X_stft.append(freq[:cant_samples])
+    #     Y_label.append(labels[i])
     
 X_stft =np.stack(X_stft) 
 X_stft.shape
-X_stft=X_stft.reshape(381,cant_samples)
+X_stft=X_stft.reshape(len(audio_data),-1)
 X_stft.shape
 
 # %% 
@@ -180,14 +188,13 @@ def clf_performance(classifier, model_name):
     print('Best Parameters: ' + str(classifier.best_params_))
 clf = svm.SVC(verbose= True,random_state=2)
 
-param_grid = tuned_parameters = [{'kernel': ['rbf'], 'gamma': [.1,.5,1,2,5,10],
-                                  'C': [.1, 1, 10, 100, 1000]},
+param_grid = tuned_parameters = [{'kernel': ['rbf'], 'gamma': ['scale',.1,.5,1,5,10],
+                                  'C': [.1, 1, 10, 50, 100]},
                                  {'kernel': ['linear'], 'C': [.1, 1, 10, 100, 1000]},
                                  {'kernel': ['poly'], 'degree' : [2,3,4,5], 'C': [.1, 1, 10, 100, 1000]}]
-clf_svc = GridSearchCV(clf, param_grid = param_grid, cv = 5, verbose = True, n_jobs = 4)
+clf_svc = GridSearchCV(clf, param_grid = param_grid, cv = 5, verbose = True, n_jobs = 6)
 best_clf_svc = clf_svc.fit(X_train, y_train)
 clf_performance(best_clf_svc,'SVC')
-
 
 #%%
 # Modelo clasificador con XGB & PCA
@@ -210,8 +217,8 @@ print("XGB+PCA: acc:"+ str(accuracy_score(y_test, y_pred)))
 
 # %%
 # Preparando datos para la CNN
-X_train_NN= np.reshape(X_train,(X_train.shape[0],513, -1,1))
-X_test_NN = np.reshape(X_test,(X_test.shape[0],513, -1,1))
+X_train_NN= np.reshape(X_train,(X_train.shape[0],stft_shape[0], -1,1))
+X_test_NN = np.reshape(X_test,(X_test.shape[0],stft_shape[0], -1,1))
 y_train_NN=keras.utils.to_categorical(y_train, num_classes=10, dtype='float32')
 y_test_NN =keras.utils.to_categorical(y_test, num_classes=10, dtype='float32')
 
