@@ -5,8 +5,10 @@ import matplotlib.pyplot as plt
 from xgboost.sklearn import XGBClassifier
 import librosa.display
 import pylab
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split, GridSearchCV , RandomizedSearchCV
+from sklearn.metrics import accuracy_score , plot_confusion_matrix
+from sklearn import svm
+from sklearn.decomposition import PCA
 import librosa    
 import glob
 import tensorflow as tf
@@ -39,6 +41,14 @@ if gpus:
     print(e)
 else:
     print("There are not GPUs avaliable")
+# Auxiliar FUNC
+def plot_confusion_matrix_custom(title, classifier, X_test, y_test, class_names, normalize = None):
+    disp = plot_confusion_matrix(classifier, X_test, y_test,
+                                 display_labels=class_names,
+                                 cmap=plt.cm.Blues,
+                                 normalize=normalize)
+    disp.ax_.set_title(title)
+    plt.show()
 # %%
 audio_data = []
 labels = []
@@ -155,30 +165,38 @@ print(np.amax(normalized_stft))
 #from skmultilearn.model_selection import iterative_train_test_split
 X_train, X_test, y_train, y_test = train_test_split(normalized_stft,Y_label, test_size=0.20,random_state =2,stratify= Y_label)
 print("Split ready")
-from sklearn.model_selection import GridSearchCV 
-from sklearn.model_selection import RandomizedSearchCV 
-from sklearn import svm
-from sklearn.decomposition import PCA
+
 
 # %%
 #Modelo con SVM
-clf = svm.SVC(verbose= True,random_state=2)
+clf = svm.SVC(verbose= True,random_state=150,C=10, kernel='linear', gamma='auto')
 clf.fit(X_train, y_train)
 y_pred = clf.predict(X_test)
 print("SVM: acc:"+ str(accuracy_score(y_test, y_pred)))
+plot_confusion_matrix_custom(title = "SVM", 
+                            classifier=clf, 
+                            X_test=X_test, 
+                            y_test = y_test,
+                            class_names =  classes,
+                            normalize =None)
 
 #%%
 # Modelo con PCA y SVM
 print("Cantidad de caracteristicas", len(X_stft[0]))
-pca = PCA(n_components=300)
+pca = PCA(n_components=320)
 pca.fit(normalized_stft) ## justa para todo el espectro de datos
 X_train_PCA = pca.transform(X_train)
 X_test_PCA = pca.transform(X_test)
-clf_PCA = svm.SVC(verbose= True,random_state=5, )
+clf_PCA = svm.SVC(verbose= True,random_state=None,C=10, kernel='linear', gamma='scale', probability=True )
 clf_PCA.fit(X_train_PCA, y_train)
 y_pred = clf_PCA.predict(X_test_PCA)
 print("SVM+PCA: acc:"+ str(accuracy_score(y_test, y_pred)))
-
+plot_confusion_matrix_custom(title = "SVM+PCA", 
+                            classifier=clf_PCA, 
+                            X_test=X_test_PCA, 
+                            y_test = y_test,
+                            class_names =  classes,
+                            normalize =None)
 #%% 
 # Modelo PCA & SVM & GRIDsearch
 #simple performance reporting function
@@ -189,11 +207,11 @@ def clf_performance(classifier, model_name):
 clf = svm.SVC(verbose= True,random_state=2)
 
 param_grid = tuned_parameters = [{'kernel': ['rbf'], 'gamma': ['scale',.1,.5,1,5,10],
-                                  'C': [.1, 1, 10, 50, 100]},
+                                  'C': [.1, 1, 10, 100, 1000]},
                                  {'kernel': ['linear'], 'C': [.1, 1, 10, 100, 1000]},
                                  {'kernel': ['poly'], 'degree' : [2,3,4,5], 'C': [.1, 1, 10, 100, 1000]}]
-clf_svc = GridSearchCV(clf, param_grid = param_grid, cv = 5, verbose = True, n_jobs = 6)
-best_clf_svc = clf_svc.fit(X_train, y_train)
+clf_svc = GridSearchCV(clf, param_grid = param_grid, cv = 5, verbose = True, n_jobs = 4)
+best_clf_svc = clf_svc.fit(X_train_PCA, y_train)
 clf_performance(best_clf_svc,'SVC')
 
 #%%
@@ -208,13 +226,18 @@ xgb_model = XGBClassifier(learning_rate=0.01,
                     objective='multi:softmax',
                     nthread=4,
                     num_class=10,
-                    num_parallel_tree = 18,
+                    num_parallel_tree = 20,
                     seed=27,verbosity= 1,n_jobs=8 )
 xgb_model.fit(X_train_PCA, y_train)
 #xgb_model.save_model('models/xgbmodel')
 y_pred = xgb_model.predict(X_test_PCA)
 print("XGB+PCA: acc:"+ str(accuracy_score(y_test, y_pred)))
-
+plot_confusion_matrix_custom(title = "XGB+PCA", 
+                            classifier=xgb_model, 
+                            X_test=X_test_PCA, 
+                            y_test = y_test,
+                            class_names =  classes,
+                            normalize =None)
 # %%
 # Preparando datos para la CNN
 X_train_NN= np.reshape(X_train,(X_train.shape[0],stft_shape[0], -1,1))
@@ -223,8 +246,6 @@ y_train_NN=keras.utils.to_categorical(y_train, num_classes=10, dtype='float32')
 y_test_NN =keras.utils.to_categorical(y_test, num_classes=10, dtype='float32')
 
 # %%
-# 1 perifoneo 1 parlante y 6--8jacks / calble UTP6A 1 rollo
-# tiempo de entrega
 # Compra para compra de proyecto de IVA
 model = Sequential()
 model.add(Conv2D(16, (3, 3), input_shape=X_train_NN.shape[1:]))
@@ -286,3 +307,4 @@ plt.figure()
 plt.show()
 
 # %%
+

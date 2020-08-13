@@ -1,6 +1,9 @@
 dataset
 models
+.ipynb_checkpoints
 logs*
+*.ipynb
 *.jpg
 *.png
 *.wav
+!STFTstudy.ipynb
