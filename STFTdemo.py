@@ -246,6 +246,8 @@ y_train_NN=keras.utils.to_categorical(y_train, num_classes=10, dtype='float32')
 y_test_NN =keras.utils.to_categorical(y_test, num_classes=10, dtype='float32')
 
 # %%
+# 1 perifoneo 1 parlante y 6--8jacks / calble UTP6A 1 rollo
+# tiempo de entrega
 # Compra para compra de proyecto de IVA
 model = Sequential()
 model.add(Conv2D(16, (3, 3), input_shape=X_train_NN.shape[1:]))
